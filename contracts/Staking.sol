@@ -10,10 +10,10 @@ contract Staking is Context, Ownable {
     // PRIVATE VARIABLES
 
     // staking periods in days
-    uint256 private constant _periodForMinimumRate = 1;
-    uint256 private constant _stakingPeriod1 = 30;
-    uint256 private constant _stakingPeriod2 = 180;
-    uint256 private constant _stakingPeriod3 = 1460;
+    uint256 private immutable _periodForMinimumRate;
+    uint256 private immutable _stakingPeriod1;
+    uint256 private immutable _stakingPeriod2;
+    uint256 private immutable _stakingPeriod3;
 
     // rewards rates correspond with staking periods, calculate as compound interest per day
     // users receive (rate * staked amount / (10**18)) tokens per staking day
@@ -102,6 +102,10 @@ contract Staking is Context, Ownable {
     // CONSTRUCTOR
 
     constructor(
+        uint256 periodForMinimumRate_,
+        uint256 stakingPeriod1_,
+        uint256 stakingPeriod2_,
+        uint256 stakingPeriod3_,
         uint256 minimumRate_,
         uint256 rewardsRate1_,
         uint256 rewardsRate2_,
@@ -112,7 +116,10 @@ contract Staking is Context, Ownable {
             address(token_) != address(0),
             "Token address cannot be the zero address"
         );
-
+        _periodForMinimumRate = periodForMinimumRate_;
+        _stakingPeriod1 = stakingPeriod1_;
+        _stakingPeriod2 = stakingPeriod2_;
+        _stakingPeriod3 = stakingPeriod3_;
         _minimumRate = minimumRate_;
         _rewardsRate1 = rewardsRate1_;
         _rewardsRate2 = rewardsRate2_;
@@ -248,7 +255,9 @@ contract Staking is Context, Ownable {
         _userStakingInfo[sender].push(
             StakingInfo(counter, amount, stakingPeriod, block.timestamp)
         );
-        ++_idCounter;
+        unchecked {
+            ++_idCounter;
+        }
         emit Stake(sender, counter, amount, block.timestamp, stakingPeriod);
     }
 
