@@ -16,7 +16,7 @@ contract Staking is Context, Ownable {
     uint256 private constant _stakingPeriod3 = 1460;
 
     // rewards rates correspond with staking periods, calculate as compound interest per day
-    // users receive (rate * staked amount * (10**18)) tokens per staking day
+    // users receive (rate * staked amount / (10**18)) tokens per staking day
     uint256 private immutable _minimumRate;
     uint256 private immutable _rewardsRate1;
     uint256 private immutable _rewardsRate2;
@@ -34,10 +34,9 @@ contract Staking is Context, Ownable {
         uint256 indexed id,
         uint256 stakedAmount,
         uint256 stakingPeriod,
-        uint256 indexed startTime
+        uint256 startTime
     );
 
-    //? should pack uint for amount and stakingPeriod? - test gas reporter
     event Withdraw(
         address indexed user,
         uint256 indexed id,
@@ -45,7 +44,7 @@ contract Staking is Context, Ownable {
         uint256 withdrawAmount,
         uint256 stakingPeriod,
         uint256 startTime,
-        uint256 indexed endTime
+        uint256 endTime
     );
 
     // MODIFIERS
@@ -55,7 +54,7 @@ contract Staking is Context, Ownable {
 
         uint256 startTime = stakingInfo.startTime;
         uint256 stakingPeriod = stakingInfo.stakingPeriod;
-        uint256 timePassed = _now() - startTime;
+        uint256 timePassed = block.timestamp - startTime;
 
         require(
             timePassed >= stakingPeriod,
@@ -121,40 +120,7 @@ contract Staking is Context, Ownable {
         _token = token_;
     }
 
-    // PUBLIC FUNCTIONS
-
-    function minimumRate() public view virtual returns (uint256) {
-        return _minimumRate;
-    }
-
-    function rewardsRate1() public view virtual returns (uint256) {
-        return _rewardsRate1;
-    }
-
-    function rewardsRate2() public view virtual returns (uint256) {
-        return _rewardsRate2;
-    }
-
-    function rewardsRate3() public view virtual returns (uint256) {
-        return _rewardsRate3;
-    }
-
-    function token() public view virtual returns (IERC20) {
-        return _token;
-    }
-
-    function idCounter() public view virtual returns (uint256) {
-        return _idCounter;
-    }
-
-    function getUserStakingInfo(address user)
-        public
-        view
-        virtual
-        returns (StakingInfo[] memory)
-    {
-        return _userStakingInfo[user];
-    }
+    // STATE-CHANGING PUBLIC FUNCTIONS
 
     function withdrawableAmount(uint256 id)
         public
@@ -185,7 +151,7 @@ contract Staking is Context, Ownable {
             "Amounts and staking periods length mismatch"
         );
 
-        for (uint256 i = 0; i < amounts.length; i++) {
+        for (uint256 i = 0; i < amounts.length; ++i) {
             stake(amounts[i], stakingPeriods[i]);
         }
     }
@@ -228,13 +194,48 @@ contract Staking is Context, Ownable {
             "Amounts and ids length mismatch"
         );
 
-        for (uint256 i = 0; i < ids.length; i++) {
+        for (uint256 i = 0; i < ids.length; ++i) {
             withdraw(amounts[i], ids[0]);
         }
     }
 
     function adminWithdraw(uint256 amount) public virtual onlyOwner {
         _token.transfer(owner(), amount);
+    }
+
+    // PUBLIC VIEW FUNCTIONS
+
+    function minimumRate() public view virtual returns (uint256) {
+        return _minimumRate;
+    }
+
+    function rewardsRate1() public view virtual returns (uint256) {
+        return _rewardsRate1;
+    }
+
+    function rewardsRate2() public view virtual returns (uint256) {
+        return _rewardsRate2;
+    }
+
+    function rewardsRate3() public view virtual returns (uint256) {
+        return _rewardsRate3;
+    }
+
+    function token() public view virtual returns (IERC20) {
+        return _token;
+    }
+
+    function idCounter() public view virtual returns (uint256) {
+        return _idCounter;
+    }
+
+    function getUserStakingInfo(address user)
+        public
+        view
+        virtual
+        returns (StakingInfo[] memory)
+    {
+        return _userStakingInfo[user];
     }
 
     // INTERNAL FUNCTIONS
@@ -245,15 +246,10 @@ contract Staking is Context, Ownable {
 
         _token.transferFrom(sender, address(this), amount);
         _userStakingInfo[sender].push(
-            StakingInfo(
-                counter,
-                amount,
-                stakingPeriod,
-                _now()
-            )
+            StakingInfo(counter, amount, stakingPeriod, block.timestamp)
         );
-        _idCounter++;
-        emit Stake(sender, counter, amount, _now(), stakingPeriod);
+        ++_idCounter;
+        emit Stake(sender, counter, amount, block.timestamp, stakingPeriod);
     }
 
     function _extendStakingPeriod(uint256 id, uint256 stakingPeriod) internal {
@@ -278,7 +274,7 @@ contract Staking is Context, Ownable {
             withdrawableAmount_,
             stakingInfo.stakingPeriod,
             stakingInfo.startTime,
-            _now()
+            block.timestamp
         );
     }
 
@@ -313,7 +309,7 @@ contract Staking is Context, Ownable {
             withdrawAmount,
             stakingPeriod,
             startTime,
-            _now()
+            block.timestamp
         );
     }
 
@@ -321,14 +317,14 @@ contract Staking is Context, Ownable {
         StakingInfo memory stakingInfo = _userStakingInfo[_msgSender()][id];
 
         uint256 stakingPeriod = stakingInfo.stakingPeriod;
-        uint256 timePassed = _now() - stakingInfo.startTime;
+        uint256 timePassed = block.timestamp - stakingInfo.startTime;
 
         uint256 amountWhenStakingPeriodEnds = calculateCompound(
             _rewardsRate(stakingPeriod),
             stakingInfo.stakedAmount,
             stakingPeriod
         );
-          
+
         // Start staking tokens at a minimal rate when users don't withdraw all tokens
         // 1 day after the staking period ends.
         if (timePassed / 1 days >= stakingPeriod + 1) {
@@ -337,7 +333,7 @@ contract Staking is Context, Ownable {
             uint256 finalAmount = calculateCompound(
                 _minimumRate,
                 amountWhenStakingPeriodEnds,
-                minimalRatePeriod 
+                minimalRatePeriod
             );
 
             return finalAmount;
@@ -350,7 +346,7 @@ contract Staking is Context, Ownable {
         view
         returns (uint256 rate)
     {
-        if (stakingPeriod  == _stakingPeriod1) {
+        if (stakingPeriod == _stakingPeriod1) {
             rate = _rewardsRate1;
         } else if (stakingPeriod == _stakingPeriod2) {
             rate = _rewardsRate2;
@@ -360,7 +356,7 @@ contract Staking is Context, Ownable {
     }
 
     // ratio is the staking rewards rate
-    // principle is the staked amount 
+    // principle is the staked amount
     // n is staking days
     function calculateCompound(
         uint256 ratio,
@@ -378,9 +374,5 @@ contract Staking is Context, Ownable {
                 ),
                 principal
             );
-    }
-
-    function _now() internal view returns (uint256) {
-        return block.timestamp;
     }
 }
