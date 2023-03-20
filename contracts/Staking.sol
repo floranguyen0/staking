@@ -1,38 +1,37 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
-import "@openzeppelin/contracts/utils/Context.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./lib/ABDKMath64x64.sol";
 
-contract Staking is Context, Ownable {
+contract Staking is Ownable {
     // PRIVATE VARIABLES
 
     // staking periods in days
-    uint256 private immutable _periodForMinimumRate;
-    uint256 private immutable _stakingPeriod1;
-    uint256 private immutable _stakingPeriod2;
-    uint256 private immutable _stakingPeriod3;
+    uint64 private immutable _periodForMinimumRate;
+    uint64 private immutable _stakingPeriod1;
+    uint64 private immutable _stakingPeriod2;
+    uint64 private immutable _stakingPeriod3;
 
     // rewards rates correspond with staking periods, calculate as compound interest per day
     // users receive (rate * staked amount / (10**18)) tokens per staking day
-    uint256 private immutable _minimumRate;
-    uint256 private immutable _rewardsRate1;
-    uint256 private immutable _rewardsRate2;
-    uint256 private immutable _rewardsRate3;
+    uint64 private immutable _minimumRate;
+    uint64 private immutable _rewardsRate1;
+    uint64 private immutable _rewardsRate2;
+    uint64 private immutable _rewardsRate3;
 
     // tokens used for staking and rewards
     IERC20 private immutable _token;
 
-    uint256 private _idCounter;
+    uint128 private _idCounter;
 
     // EVENTS
 
     event Stake(
         address indexed user,
         uint256 indexed id,
-        uint256 stakedAmount,
+        uint256 indexed stakedAmount,
         uint256 stakingPeriod,
         uint256 startTime
     );
@@ -41,7 +40,7 @@ contract Staking is Context, Ownable {
         address indexed user,
         uint256 indexed id,
         uint256 stakedAmount,
-        uint256 withdrawAmount,
+        uint256 indexed withdrawAmount,
         uint256 stakingPeriod,
         uint256 startTime,
         uint256 endTime
@@ -50,10 +49,9 @@ contract Staking is Context, Ownable {
     // MODIFIERS
 
     modifier stakingPeriodEnded(uint256 id) {
-        StakingInfo memory stakingInfo = _userStakingInfo[_msgSender()][id];
-
-        uint256 startTime = stakingInfo.startTime;
-        uint256 stakingPeriod = stakingInfo.stakingPeriod;
+        uint256 startTime = _userStakingInfo[_msgSender()][id].startTime;
+        uint256 stakingPeriod = _userStakingInfo[_msgSender()][id]
+            .stakingPeriod;
         uint256 timePassed = block.timestamp - startTime;
 
         require(
@@ -102,14 +100,14 @@ contract Staking is Context, Ownable {
     // CONSTRUCTOR
 
     constructor(
-        uint256 periodForMinimumRate_,
-        uint256 stakingPeriod1_,
-        uint256 stakingPeriod2_,
-        uint256 stakingPeriod3_,
-        uint256 minimumRate_,
-        uint256 rewardsRate1_,
-        uint256 rewardsRate2_,
-        uint256 rewardsRate3_,
+        uint64 periodForMinimumRate_,
+        uint64 stakingPeriod1_,
+        uint64 stakingPeriod2_,
+        uint64 stakingPeriod3_,
+        uint64 minimumRate_,
+        uint64 rewardsRate1_,
+        uint64 rewardsRate2_,
+        uint64 rewardsRate3_,
         IERC20 token_
     ) {
         require(
@@ -129,23 +127,16 @@ contract Staking is Context, Ownable {
 
     // STATE-CHANGING PUBLIC FUNCTIONS
 
-    function withdrawableAmount(uint256 id)
-        public
-        view
-        virtual
-        validId(id)
-        stakingPeriodEnded(id)
-        returns (uint256)
-    {
+    function withdrawableAmount(
+        uint256 id
+    ) public view virtual validId(id) stakingPeriodEnded(id) returns (uint256) {
         return _withdrawableAmount(id);
     }
 
-    function stake(uint256 amount, uint256 stakingPeriod)
-        public
-        virtual
-        validAmount(amount)
-        validStakingPeriod(stakingPeriod)
-    {
+    function stake(
+        uint256 amount,
+        uint256 stakingPeriod
+    ) public virtual validAmount(amount) validStakingPeriod(stakingPeriod) {
         _stake(amount, stakingPeriod);
     }
 
@@ -158,12 +149,18 @@ contract Staking is Context, Ownable {
             "Amounts and staking periods length mismatch"
         );
 
-        for (uint256 i = 0; i < amounts.length; ++i) {
+        for (uint256 i = 0; i < amounts.length; ) {
             stake(amounts[i], stakingPeriods[i]);
+            unchecked {
+                ++i;
+            }
         }
     }
 
-    function extendStakingPeriod(uint256 id, uint256 stakingPeriod)
+    function extendStakingPeriod(
+        uint256 id,
+        uint256 stakingPeriod
+    )
         public
         virtual
         validId(id)
@@ -173,16 +170,16 @@ contract Staking is Context, Ownable {
         _extendStakingPeriod(id, stakingPeriod);
     }
 
-    function withdrawAll(uint256 id)
-        public
-        virtual
-        validId(id)
-        stakingPeriodEnded(id)
-    {
+    function withdrawAll(
+        uint256 id
+    ) public virtual validId(id) stakingPeriodEnded(id) {
         _withdrawAll(id);
     }
 
-    function withdraw(uint256 id, uint256 withdrawAmount)
+    function withdraw(
+        uint256 id,
+        uint256 withdrawAmount
+    )
         public
         virtual
         validId(id)
@@ -192,17 +189,20 @@ contract Staking is Context, Ownable {
         _withdraw(withdrawAmount, id);
     }
 
-    function withdrawBatch(uint256[] calldata ids, uint256[] calldata amounts)
-        public
-        virtual
-    {
+    function withdrawBatch(
+        uint256[] calldata ids,
+        uint256[] calldata amounts
+    ) public virtual {
         require(
             amounts.length == ids.length,
             "Amounts and ids length mismatch"
         );
 
-        for (uint256 i = 0; i < ids.length; ++i) {
+        for (uint256 i = 0; i < ids.length; ) {
             withdraw(amounts[i], ids[0]);
+            unchecked {
+                ++i;
+            }
         }
     }
 
@@ -236,29 +236,25 @@ contract Staking is Context, Ownable {
         return _idCounter;
     }
 
-    function getUserStakingInfo(address user)
-        public
-        view
-        virtual
-        returns (StakingInfo[] memory)
-    {
+    function getUserStakingInfo(
+        address user
+    ) public view virtual returns (StakingInfo[] memory) {
         return _userStakingInfo[user];
     }
 
     // INTERNAL FUNCTIONS
 
     function _stake(uint256 amount, uint256 stakingPeriod) internal {
-        address sender = _msgSender();
         uint256 counter = _idCounter;
 
-        _token.transferFrom(sender, address(this), amount);
-        _userStakingInfo[sender].push(
+        _token.transferFrom(msg.sender, address(this), amount);
+        _userStakingInfo[msg.sender].push(
             StakingInfo(counter, amount, stakingPeriod, block.timestamp)
         );
         unchecked {
             ++_idCounter;
         }
-        emit Stake(sender, counter, amount, block.timestamp, stakingPeriod);
+        emit Stake(msg.sender, counter, amount, block.timestamp, stakingPeriod);
     }
 
     function _extendStakingPeriod(uint256 id, uint256 stakingPeriod) internal {
@@ -269,15 +265,14 @@ contract Staking is Context, Ownable {
     }
 
     function _withdrawAll(uint256 id) internal {
-        address sender = _msgSender();
-        StakingInfo memory stakingInfo = _userStakingInfo[sender][id];
+        StakingInfo storage stakingInfo = _userStakingInfo[msg.sender][id];
         uint256 withdrawableAmount_ = _withdrawableAmount(id);
 
-        delete _userStakingInfo[sender][id];
-        _token.transfer(sender, withdrawableAmount_);
+        delete _userStakingInfo[msg.sender][id];
+        _token.transfer(msg.sender, withdrawableAmount_);
 
         emit Withdraw(
-            sender,
+            msg.sender,
             id,
             stakingInfo.stakedAmount,
             withdrawableAmount_,
@@ -288,8 +283,7 @@ contract Staking is Context, Ownable {
     }
 
     function _withdraw(uint256 id, uint256 withdrawAmount) internal {
-        address sender = _msgSender();
-        StakingInfo memory stakingInfo = _userStakingInfo[sender][id];
+        StakingInfo storage stakingInfo = _userStakingInfo[msg.sender][id];
         uint256 withdrawableAmount_ = _withdrawableAmount(id);
 
         uint256 stakedAmount = stakingInfo.stakedAmount;
@@ -301,18 +295,17 @@ contract Staking is Context, Ownable {
             "Withdraw amount exceeds the withdrawable amount"
         );
 
-        delete _userStakingInfo[sender][id];
-
         if (withdrawAmount < withdrawableAmount_) {
             uint256 tokensStakedAtMinimumRate = withdrawableAmount_ -
                 withdrawAmount;
             _stake(tokensStakedAtMinimumRate, _periodForMinimumRate);
         }
 
-        _token.transfer(sender, withdrawAmount);
+        delete _userStakingInfo[msg.sender][id];
+        _token.transfer(msg.sender, withdrawAmount);
 
         emit Withdraw(
-            sender,
+            msg.sender,
             id,
             stakedAmount,
             withdrawAmount,
@@ -323,7 +316,7 @@ contract Staking is Context, Ownable {
     }
 
     function _withdrawableAmount(uint256 id) internal view returns (uint256) {
-        StakingInfo memory stakingInfo = _userStakingInfo[_msgSender()][id];
+        StakingInfo storage stakingInfo = _userStakingInfo[_msgSender()][id];
 
         uint256 stakingPeriod = stakingInfo.stakingPeriod;
         uint256 timePassed = block.timestamp - stakingInfo.startTime;
@@ -350,11 +343,9 @@ contract Staking is Context, Ownable {
         return amountWhenStakingPeriodEnds;
     }
 
-    function _rewardsRate(uint256 stakingPeriod)
-        internal
-        view
-        returns (uint256 rate)
-    {
+    function _rewardsRate(
+        uint256 stakingPeriod
+    ) internal view returns (uint256 rate) {
         if (stakingPeriod == _stakingPeriod1) {
             rate = _rewardsRate1;
         } else if (stakingPeriod == _stakingPeriod2) {
@@ -362,6 +353,7 @@ contract Staking is Context, Ownable {
         } else {
             rate = _rewardsRate3;
         }
+        revert("Invalid staking period");
     }
 
     // ratio is the staking rewards rate
@@ -377,7 +369,7 @@ contract Staking is Context, Ownable {
                 ABDKMath64x64.pow(
                     ABDKMath64x64.add(
                         ABDKMath64x64.fromUInt(1),
-                        ABDKMath64x64.divu(ratio, 10**18)
+                        ABDKMath64x64.divu(ratio, 10 ** 18)
                     ),
                     n
                 ),
